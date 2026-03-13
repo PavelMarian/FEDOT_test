@@ -19,6 +19,7 @@ from fedot.core.data.tensor_data_bridge import tensordata_to_input_data
 from fedot.core.data.tools import StateEnum
 from fedot.core.data.data_preprocessing import convert_into_column
 from fedot.core.data.multi_modal import MultiModalData
+from fedot.core.pipelines.pipeline_ensemble import PipelineEnsemble
 from fedot.core.pipelines.pipeline import Pipeline
 from fedot.core.pipelines.ts_wrappers import in_sample_ts_forecast, convert_forecast_to_output
 from fedot.core.repository.tasks import Task, TaskTypesEnum
@@ -89,7 +90,8 @@ class ApiDataProcessor:
             data = self.preprocessor.obligatory_prepare_for_fit(data)
         return data
 
-    def define_predictions(self, current_pipeline: Pipeline, test_data: Union[InputData, MultiModalData],
+    def define_predictions(self, current_pipeline: Union[Pipeline, PipelineEnsemble],
+                           test_data: Union[InputData, MultiModalData],
                            in_sample: bool = False, validation_blocks: int = None) -> OutputData:
         """ Prepare predictions """
         forecast_length = getattr(test_data.task.task_params, 'forecast_length', None)
