@@ -14,15 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # Explicitly check out the PR's merge commit.
-          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
 
       - name: Pre-fetch base and head refs for the PR
+        if: github.event_name == 'pull_request'
         env:
           PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          # Pass GitHub expressions through env and quote shell expansions.
           git fetch --no-tags origin \
             "$PR_BASE_REF" \
             "+refs/pull/$PR_NUMBER/head"
