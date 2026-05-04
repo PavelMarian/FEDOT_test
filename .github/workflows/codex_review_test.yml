@@ -69,9 +69,14 @@ jobs:
         with:
           github-token: ${{ github.token }}
           script: |
+            const prNumber = context.payload.pull_request?.number;
+            if (!prNumber) {
+              console.log('Not a pull request, skipping post.');
+              return;
+            }
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
+              issue_number: prNumber,
               body: process.env.CODEX_FINAL_MESSAGE,
             });
