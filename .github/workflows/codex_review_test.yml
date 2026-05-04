@@ -1,8 +1,16 @@
-name: Perform a code review when a pull request is created.
+name: Make a Review (by Codex)
 on:
   pull_request:
-    types: [opened]
-  workflow_dispatch:  # manually launch from GitHub actions
+    branches: [ master ]
+    types: [ opened, synchronize, ready_for_review ]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+
+env:
+  PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
 
 jobs:
   codex:
@@ -11,48 +19,72 @@ jobs:
       contents: read
     outputs:
       final_message: ${{ steps.run_codex.outputs.final-message }}
+      pr_number: ${{ env.PR_NUMBER }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
+          ref: ${{ format('refs/pull/{0}/merge', env.PR_NUMBER) }}
 
-      - name: Pre-fetch base and head refs for the PR
-        if: github.event_name == 'pull_request'
+      - name: Fetch PR refs
         env:
-          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
         run: |
           git fetch --no-tags origin \
-            "$PR_BASE_REF" \
-            "+refs/pull/$PR_NUMBER/head"
+            "+refs/pull/$PR_NUMBER/head:refs/remotes/origin/pr/$PR_NUMBER"
 
-      # If you want Codex to build and run code, install any dependencies that
-      # need to be downloaded before the "Run Codex" step because Codex's
-      # default sandbox disables network access.
-
-      # - name: Run Codex
-      #   id: run_codex
-      #   uses: openai/codex-action@v1
-      #   with:
-      #     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-      #     prompt: |
-      #       This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
-
-      #       Review ONLY the changes introduced by the PR, so consider:
-      #          git log --oneline ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}
-
-      #       Suggest any improvements, potential bugs, or issues.
-      #       Be concise and specific in your feedback.
-
-      #       Pull request title and body:
-      #       ----
-      #       ${{ github.event.pull_request.title }}
-      #       ${{ github.event.pull_request.body }}
+      - name: Load PR metadata
+        id: pr
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
       
-      - name: Mock Codex response
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+      
+            core.setOutput('title', pr.title);
+            core.setOutput('body', pr.body || '');
+            core.setOutput('base_sha', pr.base.sha);
+            core.setOutput('head_sha', pr.head.sha);
+            
+      - name: Load Codex Review system promt
+        id: prompt
+        run: |
+            PROMPT_FILE=".github/codex/prompts/review_system_prompt.md"
+            if [ -f "$PROMPT_FILE" ]; then
+              CONTENT=$(cat "$PROMPT_FILE")
+              echo "content<<EOF" >> $GITHUB_OUTPUT
+              echo "$CONTENT" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            else
+              echo "content=" >> $GITHUB_OUTPUT
+            fi
+
+      - name: Mock Codex (for fork testing)
         id: run_codex
         run: |
-          echo "final-message=Mock review: everything looks good" >> $GITHUB_OUTPUT
+          echo "final-message<<EOF" >> $GITHUB_OUTPUT
+      
+          echo "🧪 MOCK CODEX REVIEW" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "PR #${{ env.PR_NUMBER }}" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "Summary:" >> $GITHUB_OUTPUT
+          echo "- This is a simulated review for testing the workflow." >> $GITHUB_OUTPUT
+          echo "- No actual AI analysis was performed." >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "Checks:" >> $GITHUB_OUTPUT
+          echo "✔ Workflow execution works" >> $GITHUB_OUTPUT
+          echo "✔ PR metadata is accessible" >> $GITHUB_OUTPUT
+          echo "✔ Comment posting is functional" >> $GITHUB_OUTPUT
+      
+          echo "EOF" >> $GITHUB_OUTPUT
 
   post_feedback:
     runs-on: ubuntu-latest
@@ -66,10 +98,11 @@ jobs:
         uses: actions/github-script@v7
         env:
           CODEX_FINAL_MESSAGE: ${{ needs.codex.outputs.final_message }}
+          PR_NUMBER: ${{ needs.codex.outputs.pr_number }}
         with:
           github-token: ${{ github.token }}
           script: |
-            const prNumber = context.payload.pull_request?.number;
+            const prNumber = Number(process.env.PR_NUMBER);
             if (!prNumber) {
               console.log('Not a pull request, skipping post.');
               return;
