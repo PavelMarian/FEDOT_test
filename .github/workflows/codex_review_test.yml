@@ -48,6 +48,10 @@ jobs:
       #       ----
       #       ${{ github.event.pull_request.title }}
       #       ${{ github.event.pull_request.body }}
+      - name: Mock Codex response
+      id: run_codex
+      run: |
+        echo "final-message=Mock review: everything looks good" >> $GITHUB_OUTPUT
 
   post_feedback:
     runs-on: ubuntu-latest
